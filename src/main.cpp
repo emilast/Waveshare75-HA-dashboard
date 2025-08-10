@@ -277,6 +277,14 @@ void handle24BitImageData(int width, WiFiClient *stream)
   int rowSize = ((width * 3 + 3) / 4) * 4;
   uint8_t row[rowSize];
 
+  // Simple 4x4 Bayer matrix for ordered dithering
+  const uint8_t bayer[4][4] = {
+    {  0,  8,  2, 10 },
+    { 12,  4, 14,  6 },
+    {  3, 11,  1,  9 },
+    { 15,  7, 13,  5 }
+  };
+
   for (int y = DISPLAY_HEIGHT - 1; y >= 0; y--)
   {
     stream->readBytes(row, rowSize);
@@ -288,7 +296,13 @@ void handle24BitImageData(int width, WiFiClient *stream)
       uint8_t r = row[x * 3 + 2];
       // Convert to grayscale (simple average)
       uint8_t gray = (uint16_t(r) + uint16_t(g) + uint16_t(b)) / 3;
-      uint8_t level = gray >> 6; // 0–3
+      // uint8_t level = gray >> 6; // 0–3
+      
+      
+      // Ordered dithering: adjust gray value by Bayer threshold
+      uint8_t threshold = bayer[y % 4][x % 4]; // 0..15
+      uint16_t dithered = std::min<int>(255, std::max<int>(0, (gray + threshold) - 8)); // clamp to 0-255
+      uint8_t level = dithered >> 6; // 0–3
 
       int index = y * DISPLAY_WIDTH + x;
       int byteIndex = index / 4;
