@@ -2,14 +2,13 @@
 #include "DEV_Config.h"
 #include "EPD.h"
 #include "GUI_Paint.h"
-#include "imagedata.h"
 #include <stdlib.h>
 
 #include <WiFiManager.h>
 #include <HTTPClient.h>
 
-#define DISPLAY_WIDTH 800
-#define DISPLAY_HEIGHT 480
+#define DISPLAY_WIDTH EPD_7IN5_V2_WIDTH
+#define DISPLAY_HEIGHT EPD_7IN5_V2_HEIGHT
 #define BMP_URL "http://192.168.10.247:5000/" // 24 bpp
 
 uint8_t* buffer = nullptr; // Will be allocated dynamically
@@ -31,167 +30,64 @@ void setup()
   }
   Serial.println("Connected to WiFi");
 
-  printf("EPD_7IN5_V2_test Demo\r\n");
-  DEV_Module_Init();
-
-  printf("e-Paper Init and Clear...\r\n");
-  EPD_7IN5_V2_Init();
-  EPD_7IN5_V2_Clear();
-  DEV_Delay_ms(500);
-
-  // Allocate buffer dynamically
+  // Allocate image buffer dynamically
   size_t bufferSize = DISPLAY_WIDTH * DISPLAY_HEIGHT / 4;
   buffer = (uint8_t*)malloc(bufferSize);
   if (buffer == nullptr) {
     Serial.println("Failed to allocate buffer memory!");
     ESP.restart();
   }
+  Paint_NewImage(buffer, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, WHITE);
   Serial.printf("Allocated %d bytes for display buffer\n", bufferSize);
 
-  //Create a new image cache
-  /* you have to edit the startup_stm32fxxx.s file and set a big enough heap size */
-  // UWORD Imagesize = ((EPD_7IN5_V2_WIDTH % 8 == 0) ? (EPD_7IN5_V2_WIDTH / 8 ) : (EPD_7IN5_V2_WIDTH / 8 + 1)) * EPD_7IN5_V2_HEIGHT;
-  // if ((buffer = (UBYTE *)malloc(Imagesize)) == NULL) {
-  //   printf("Failed to apply for black memory...\r\n");
-  //   while (1);
-  // }
-  printf("Paint_NewImage\r\n");
-  Paint_NewImage(buffer, EPD_7IN5_V2_WIDTH, EPD_7IN5_V2_HEIGHT, 0, WHITE);
+  DEV_Module_Init();
 
+  // Startup message
+  // EPD_7IN5_V2_Init();
+  EPD_7IN5_V2_Init_Fast(); // Fast => Less flicker when displaying the screen
+  printf("Startup screen...\r\n");
+  Paint_SelectImage(buffer);
+  Paint_Clear(WHITE);
+  Paint_DrawString_EN(70, 50, "Initializing...", &Font16, WHITE, BLACK);
+  Paint_DrawString_EN(70, 70, BMP_URL, &Font12, WHITE, BLACK);
+  EPD_7IN5_V2_Display(buffer); // Offsetfel
+  DEV_Delay_ms(2000);
 
-// #if 0   //Partial refresh, example shows time
-//     EPD_7IN5_V2_Init_Part();
-// 	Paint_NewImage(BlackImage, Font20.Width * 7, Font20.Height, 0, WHITE);
-//     Debug("Partial refresh\r\n");
-//     Paint_SelectImage(BlackImage);
-//     Paint_Clear(WHITE);
-	
-//     PAINT_TIME sPaint_time;
-//     sPaint_time.Hour = 12;
-//     sPaint_time.Min = 34;
-//     sPaint_time.Sec = 56;
-//     UBYTE num = 10;
-//     for (;;) {
-//         sPaint_time.Sec = sPaint_time.Sec + 1;
-//         if (sPaint_time.Sec == 60) {
-//             sPaint_time.Min = sPaint_time.Min + 1;
-//             sPaint_time.Sec = 0;
-//             if (sPaint_time.Min == 60) {
-//                 sPaint_time.Hour =  sPaint_time.Hour + 1;
-//                 sPaint_time.Min = 0;
-//                 if (sPaint_time.Hour == 24) {
-//                     sPaint_time.Hour = 0;
-//                     sPaint_time.Min = 0;
-//                     sPaint_time.Sec = 0;
-//                 }
-//             }
-//         }
-//         Paint_ClearWindows(0, 0, Font20.Width * 7, Font20.Height, WHITE);
-//         Paint_DrawTime(0, 0, &sPaint_time, &Font20, WHITE, BLACK);
+  // // Offsetfel
+  // EPD_7IN5_V2_Init_4Gray();
+  // printf("4 gray display 1\r\n");
+  // Paint_SelectImage(buffer);
+  // Paint_Clear(WHITE);
+  // Paint_DrawString_EN(400, 50, "waveshare 2", &Font16, BLACK, WHITE);
+  // Paint_DrawString_EN(400, 400, "hello world 2", &Font12, WHITE, BLACK);
+  // EPD_7IN5_V2_WritePicture_4Gray(buffer); // Känns komprimerat, fel format, grått i kanten på text
+  // // EPD_7IN5_V2_Display_4Gray(buffer); // Offsetfel
+  // DEV_Delay_ms(2000);
 
-//         num = num - 1;
-//         if(num == 0) {
-//             break;
-//         }
-// 		EPD_7IN5_V2_Display_Part(BlackImage, 150, 80, 150 + Font20.Width * 7, 80 + Font20.Height);
-//         DEV_Delay_ms(500);//Analog clock 1s
-//     }
-// #endif
-/*
-    The feature will only be available on screens sold after 24/10/23
-*/
-
-    // EPD_7IN5_V2_Init_4Gray();
-    // printf("4 grayscale display\r\n");
-    // Paint_NewImage(BlackImage, EPD_7IN5_V2_WIDTH, EPD_7IN5_V2_HEIGHT, 0, WHITE);
-    // Paint_SetScale(4);
-    // Paint_Clear(0xff);
-
-    // if (GUI_ReadBmp("graph-sample.bmp", 0, 0) != 0) {
-    //   printf("Failed to load BMP image\r\n");
-    // }
-
-    // Paint_DrawImage(gImage_7in5_V2, 0, 0, EPD_7IN5_V2_WIDTH/2, EPD_7IN5_V2_HEIGHT);
-
-    // // https://github.com/waveshareteam/e-Paper/blob/master/STM32/STM32-F103ZET6/User/Examples/EPD_7in5_V2_test.c
-    // EPD_7IN5_V2_Init_Fast();
-    // printf("show image for array\r\n");
-    // Paint_SelectImage(BlackImage);
-    // Paint_Clear(WHITE);
-    // Paint_DrawBitMap(graph_sample);
-    // EPD_7IN5_V2_Display(BlackImage);
-    // DEV_Delay_ms(2000);
-
-
-
-    // EPD_7IN5_V2_Init_Fast();
-    // EPD_7IN5_V2_Init_4Gray();
-    // printf("4 grayscale display\r\n");
-    // Paint_NewImage(BlackImage, EPD_7IN5_V2_WIDTH, EPD_7IN5_V2_HEIGHT, 0, WHITE);
-
-    // printf("show image for array\r\n");
-    // Paint_SelectImage(BlackImage);
-    // Paint_Clear(WHITE);
-    // // Paint_DrawBitMap(gImage_7in5_V2);
-    // Paint_DrawBitMap(graph_sample_gray);
-
-
-    // Paint_DrawPoint(10, 80, GRAY4, DOT_PIXEL_1X1, DOT_STYLE_DFT);
-    // Paint_DrawPoint(10, 90, GRAY4, DOT_PIXEL_2X2, DOT_STYLE_DFT);
-    // Paint_DrawPoint(10, 100, GRAY4, DOT_PIXEL_3X3, DOT_STYLE_DFT);
-    // Paint_DrawLine(420, 70, 70, 120, GRAY4, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    // Paint_DrawLine(470, 70, 20, 120, GRAY4, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
-    // Paint_DrawRectangle(420, 70, 70, 120, GRAY4, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-    // Paint_DrawRectangle(480, 70, 130, 120, GRAY4, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    // Paint_DrawCircle(45, 95, 20, GRAY4, DOT_PIXEL_1X1, DRAW_FILL_EMPTY);
-    // Paint_DrawCircle(105, 95, 20, GRAY2, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    // Paint_DrawLine(85, 95, 125, 95, GRAY4, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
-    // Paint_DrawLine(105, 75, 105, 115, GRAY4, DOT_PIXEL_1X1, LINE_STYLE_DOTTED);
-    // Paint_DrawString_EN(10, 0, "waveshare", &Font16, GRAY4, GRAY1);
-    // Paint_DrawString_EN(10, 20, "hello world", &Font12, GRAY3, GRAY1);
-    // Paint_DrawNum(10, 33, 123456789, &Font12, GRAY4, GRAY2);
-    // Paint_DrawNum(10, 50, 987654321, &Font16, GRAY1, GRAY4);
-    // Paint_DrawString_CN(130, 0,"你好abc", &Font12CN, GRAY4, GRAY1);
-    // Paint_DrawString_CN(130, 20,"你好abc", &Font12CN, GRAY3, GRAY2);
-    // Paint_DrawString_CN(130, 40,"你好abc", &Font12CN, GRAY2, GRAY3);
-    // Paint_DrawString_CN(130, 60,"你好abc", &Font12CN, GRAY1, GRAY4);
-    // Paint_DrawString_CN(10, 130, "微雪电子", &Font24CN, GRAY1, GRAY4);
-    // EPD_7IN5_V2_WritePicture_4Gray(BlackImage);
-    // DEV_Delay_ms(3000);
-
-//   printf("Goto Sleep...\r\n");
-// //   EPD_7IN5_V2_Sleep();
-//   free(BlackImage);
-//   BlackImage = NULL;
+  EPD_7IN5_V2_Sleep();
 }
 
-/* The main loop -------------------------------------------------------------*/
 void loop()
 {
 
     if (downloadBMP(BMP_URL)) {
         printf("BMP downloaded successfully!\n");
-        // EPD_7IN5_V2_Init_Fast(); // 1-bit
         EPD_7IN5_V2_Init_4Gray();
         Paint_SelectImage(buffer);
         // Paint_Clear(WHITE);
         Paint_DrawBitMap(buffer);
-        // EPD_7IN5_V2_Display(buffer); // 1-bit
-        // EPD_7IN5_V2_WritePicture_4Gray(buffer); // TODO What does this do?
         EPD_7IN5_V2_Display_4Gray(buffer);
-
+        EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
     } else {
         printf("Failed to download BMP image.\n");
     }
 
   DEV_Delay_ms(60000);
-
   // delay(60000);
-
 }
 
-
-
+// Downloads a BMP image from the given URL and decodes it into the display buffer.
+// Supports 8-bit (grayscale) and 24-bit (RGB) BMPs with dimensions matching the display.
 bool downloadBMP(const char* url) {
   Serial.printf("Downloading BMP from: %s\n", url);
 
@@ -207,11 +103,11 @@ bool downloadBMP(const char* url) {
 
   WiFiClient* stream = http.getStreamPtr();
 
-  // Läs BMP-header (54 byte)
+  // Read BMP header (54 bytes)
   uint8_t header[54];
   stream->readBytes(header, 54);
 
-  // Enkel kontroll: ska börja med 'BM'
+  // Simple check: should start with 'BM'
   if (header[0] != 'B' || header[1] != 'M') {
     Serial.println("Not a BMP file");
     http.end();
@@ -225,7 +121,7 @@ bool downloadBMP(const char* url) {
 
   Serial.printf("Image downloaded: %dx%d, %d-bit color depth\n", width, abs(height), bitDepth);
 
-
+  // Validate image size and color depth
   if ((bitDepth != 8 && bitDepth != 24) || width != DISPLAY_WIDTH || abs(height) != DISPLAY_HEIGHT) {
     Serial.println("Incorrect image size or color depth");
     Serial.printf("Expected: %dx%d, 8- or 24-bit color depth\n", DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -234,10 +130,11 @@ bool downloadBMP(const char* url) {
     return false;
   }
 
-  // Hoppa till bilddata
+  // Skip to image data (skip palette if present)
   int skip = dataOffset - 54;
-  while (skip-- > 0) stream->read(); // Läs bort extra palettdata
+  while (skip-- > 0) stream->read(); // Skip extra palette data
 
+  // Decode image data into buffer
   if (bitDepth == 8) {
     handle8BitImageData(width, stream);
   } else if (bitDepth == 24) {
