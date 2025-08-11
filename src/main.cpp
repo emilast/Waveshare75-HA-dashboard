@@ -296,13 +296,18 @@ void handle24BitImageData(int width, WiFiClient *stream)
       uint8_t r = row[x * 3 + 2];
       // Convert to grayscale (simple average)
       uint8_t gray = (uint16_t(r) + uint16_t(g) + uint16_t(b)) / 3;
-      // uint8_t level = gray >> 6; // 0–3
+      uint8_t level = gray >> 6; // 0–3
       
-      
+      // Apply gamma correction to boost midtones and above
+      // float gamma = 0.8f; // <1.0 boosts mid/high tones
+      // float norm = gray / 255.0f;
+      // norm = powf(norm, gamma);
+      // uint8_t gamma_gray = uint8_t(norm * 255.0f + 0.5f);
+
       // Ordered dithering: adjust gray value by Bayer threshold
-      uint8_t threshold = bayer[y % 4][x % 4]; // 0..15
-      uint16_t dithered = std::min<int>(255, std::max<int>(0, (gray + threshold) - 8)); // clamp to 0-255
-      uint8_t level = dithered >> 6; // 0–3
+      // uint8_t threshold = bayer[y % 4][x % 4]; // 0..15
+      // uint16_t dithered = std::min<int>(255, std::max<int>(0, (gamma_gray + threshold) - 8)); // clamp to 0-255
+      // uint8_t level = dithered >> 6; // 0–3
 
       int index = y * DISPLAY_WIDTH + x;
       int byteIndex = index / 4;
