@@ -9,13 +9,14 @@
 
 #define DISPLAY_WIDTH EPD_7IN5_V2_WIDTH
 #define DISPLAY_HEIGHT EPD_7IN5_V2_HEIGHT
-#define BMP_URL "http://192.168.10.247:5000/" // 24 bpp
+#define BMP_URL "http://192.168.10.247:5000/1" // 24 bpp
 
 uint8_t* buffer = nullptr; // Will be allocated dynamically
+size_t bufferSize = 0;
 
 bool downloadBMP(const char *url);
-void handle24BitImageData(int width, WiFiClient *stream);
 void handle8BitImageData(int width, WiFiClient *stream);
+void handle24BitImageData(int width, int height, WiFiClient *stream, int x, int y, uint8_t* buffer, size_t bufferSize);
 
 
 /* Entry point ----------------------------------------------------------------*/
@@ -31,12 +32,13 @@ void setup()
   Serial.println("Connected to WiFi");
 
   // Allocate image buffer dynamically
-  size_t bufferSize = DISPLAY_WIDTH * DISPLAY_HEIGHT / 4;
+  bufferSize = DISPLAY_WIDTH * DISPLAY_HEIGHT / 4;
   buffer = (uint8_t*)malloc(bufferSize);
   if (buffer == nullptr) {
     Serial.println("Failed to allocate buffer memory!");
     ESP.restart();
   }
+  memset(buffer, 0xFF, bufferSize);
   Paint_NewImage(buffer, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, WHITE);
   Serial.printf("Allocated %d bytes for display buffer\n", bufferSize);
 
@@ -51,7 +53,7 @@ void setup()
   Paint_DrawString_EN(70, 50, "Initializing...", &Font16, WHITE, BLACK);
   Paint_DrawString_EN(70, 70, BMP_URL, &Font12, WHITE, BLACK);
   EPD_7IN5_V2_Display(buffer); // Offsetfel
-  DEV_Delay_ms(2000);
+  // DEV_Delay_ms(2000);
 
   // // Offsetfel
   // EPD_7IN5_V2_Init_4Gray();
@@ -67,20 +69,39 @@ void setup()
   EPD_7IN5_V2_Sleep();
 }
 
+void EPD_7IN5_V2_Clear_4Gray(void) {
+    // size = width * height / 4 because 4 pixels per byte in 4-gray mode
+    uint32_t size = EPD_7IN5_V2_WIDTH * EPD_7IN5_V2_HEIGHT / 4;
+    uint8_t white = 0xFF; // 0b11111111 means all pixels = white (2 bits each)
+
+    uint8_t *clearBuffer = (uint8_t *)malloc(size);
+    if (clearBuffer == NULL) return;
+
+    memset(clearBuffer, white, size);
+
+    EPD_7IN5_V2_Display_4Gray(clearBuffer);
+
+    free(clearBuffer);
+}
+
+
 void loop()
 {
+    EPD_7IN5_V2_Init_4Gray();
+    // EPD_7IN5_V2_Clear_4Gray();
+    Paint_SelectImage(buffer);
+    Paint_Clear(BLACK);
 
     if (downloadBMP(BMP_URL)) {
         printf("BMP downloaded successfully!\n");
-        EPD_7IN5_V2_Init_4Gray();
-        Paint_SelectImage(buffer);
-        // Paint_Clear(WHITE);
-        Paint_DrawBitMap(buffer);
+        // Paint_DrawBitMap(buffer);
         EPD_7IN5_V2_Display_4Gray(buffer);
         EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
-    } else {
+    }
+     else {
         printf("Failed to download BMP image.\n");
     }
+
 
   DEV_Delay_ms(60000);
   // delay(60000);
@@ -119,10 +140,10 @@ bool downloadBMP(const char* url) {
   int height = *(int*)&header[22];
   uint16_t bitDepth = *(uint16_t*)&header[28];
 
-  Serial.printf("Image downloaded: %dx%d, %d-bit color depth\n", width, abs(height), bitDepth);
+  Serial.printf("Image downloaded: %dx%d, %d-bit color depth\n", width, height, bitDepth);
 
   // Validate image size and color depth
-  if ((bitDepth != 8 && bitDepth != 24) || width != DISPLAY_WIDTH || abs(height) != DISPLAY_HEIGHT) {
+  if ((bitDepth != 8 && bitDepth != 24)) {
     Serial.println("Incorrect image size or color depth");
     Serial.printf("Expected: %dx%d, 8- or 24-bit color depth\n", DISPLAY_WIDTH, DISPLAY_HEIGHT);
     Serial.printf("Data offset: %d\n", dataOffset);
@@ -138,7 +159,10 @@ bool downloadBMP(const char* url) {
   if (bitDepth == 8) {
     handle8BitImageData(width, stream);
   } else if (bitDepth == 24) {
-    handle24BitImageData(width, stream);
+    handle24BitImageData(width, height, stream, 
+      (DISPLAY_WIDTH-width)/2,
+      (DISPLAY_HEIGHT-height)/2 + 20,
+      buffer, bufferSize);
   }
 
   http.end();
@@ -169,23 +193,20 @@ void handle8BitImageData(int width, WiFiClient *stream)
 }
 
 
-void handle24BitImageData(int width, WiFiClient *stream)
+void handle24BitImageData(int width, int height, WiFiClient *stream, int xStart, int yStart, uint8_t* buffer, size_t bufferSize)
 {
   int rowSize = ((width * 3 + 3) / 4) * 4;
   uint8_t row[rowSize];
 
-  // Simple 4x4 Bayer matrix for ordered dithering
-  const uint8_t bayer[4][4] = {
-    {  0,  8,  2, 10 },
-    { 12,  4, 14,  6 },
-    {  3, 11,  1,  9 },
-    { 15,  7, 13,  5 }
-  };
+  memset(buffer, 0xFF, bufferSize);
 
-  for (int y = DISPLAY_HEIGHT - 1; y >= 0; y--)
+  for (int y = height - 1; y >= 0; y--)
   {
+    if (y % 10 == 0) printf("Processing row %d. Free heap: %d\n", y, ESP.getFreeHeap());
+  
     stream->readBytes(row, rowSize);
-    for (int x = 0; x < DISPLAY_WIDTH; x++)
+
+    for (int x = 0; x < width; x++)
     {
       // BMP stores in BGR order
       uint8_t b = row[x * 3 + 0];
@@ -193,20 +214,9 @@ void handle24BitImageData(int width, WiFiClient *stream)
       uint8_t r = row[x * 3 + 2];
       // Convert to grayscale (simple average)
       uint8_t gray = (uint16_t(r) + uint16_t(g) + uint16_t(b)) / 3;
-      uint8_t level = gray >> 6; // 0–3
-      
-      // Apply gamma correction to boost midtones and above
-      // float gamma = 0.8f; // <1.0 boosts mid/high tones
-      // float norm = gray / 255.0f;
-      // norm = powf(norm, gamma);
-      // uint8_t gamma_gray = uint8_t(norm * 255.0f + 0.5f);
+      uint8_t level = level = gray >> 6; // 0–3
 
-      // Ordered dithering: adjust gray value by Bayer threshold
-      // uint8_t threshold = bayer[y % 4][x % 4]; // 0..15
-      // uint16_t dithered = std::min<int>(255, std::max<int>(0, (gamma_gray + threshold) - 8)); // clamp to 0-255
-      // uint8_t level = dithered >> 6; // 0–3
-
-      int index = y * DISPLAY_WIDTH + x;
+      int index = (yStart + y) * DISPLAY_WIDTH + (xStart + x);
       int byteIndex = index / 4;
       int shift = (3 - (index % 4)) * 2;
 
