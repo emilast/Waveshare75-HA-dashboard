@@ -9,12 +9,19 @@
 
 #define DISPLAY_WIDTH EPD_7IN5_V2_WIDTH
 #define DISPLAY_HEIGHT EPD_7IN5_V2_HEIGHT
-#define BMP_URL "http://192.168.10.247:5000/" // 24 bpp
+#define BMP_URL "http://192.168.10.247:5000/3" // 24 bpp
+
+#define IMAGE_WIDTH 600
+#define IMAGE_HEIGHT 440
+
 
 uint8_t* buffer = nullptr; // Will be allocated dynamically
+size_t bufferSize = 0;
+uint8_t* imageBuffer = nullptr; // Will be allocated dynamically
+size_t imageBufferSize = 0;
 
 bool downloadBMP(const char *url);
-void handle24BitImageData(int width, WiFiClient *stream);
+void handle24BitImageData(int width,int height, WiFiClient *stream, uint8_t* imageBuffer, size_t imageBufferSize);
 void handle8BitImageData(int width, WiFiClient *stream);
 
 
@@ -30,15 +37,26 @@ void setup()
   }
   Serial.println("Connected to WiFi");
 
-  // Allocate image buffer dynamically
-  size_t bufferSize = DISPLAY_WIDTH * DISPLAY_HEIGHT / 4;
+  // Allocate display buffer dynamically
+  bufferSize = DISPLAY_WIDTH * DISPLAY_HEIGHT / 4;
   buffer = (uint8_t*)malloc(bufferSize);
   if (buffer == nullptr) {
-    Serial.println("Failed to allocate buffer memory!");
+    Serial.println("Failed to allocate display buffer memory!");
     ESP.restart();
   }
+  memset(buffer, WHITE, bufferSize);
   Paint_NewImage(buffer, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, WHITE);
   Serial.printf("Allocated %d bytes for display buffer\n", bufferSize);
+
+  // Allocate image buffer dynamically
+  imageBufferSize = IMAGE_WIDTH * IMAGE_HEIGHT / 4;
+  imageBuffer = (uint8_t*)malloc(imageBufferSize);
+  if (imageBuffer == nullptr) {
+    Serial.println("Failed to allocate image buffer memory!");
+    ESP.restart();
+  }
+  memset(imageBuffer, WHITE, imageBufferSize);
+  Serial.printf("Allocated %d bytes for image buffer\n", imageBufferSize);
 
   DEV_Module_Init();
 
@@ -51,7 +69,7 @@ void setup()
   Paint_DrawString_EN(70, 50, "Initializing...", &Font16, WHITE, BLACK);
   Paint_DrawString_EN(70, 70, BMP_URL, &Font12, WHITE, BLACK);
   EPD_7IN5_V2_Display(buffer); // Offsetfel
-  DEV_Delay_ms(2000);
+  // DEV_Delay_ms(2000);
 
   // // Offsetfel
   // EPD_7IN5_V2_Init_4Gray();
@@ -69,18 +87,29 @@ void setup()
 
 void loop()
 {
+  EPD_7IN5_V2_Init_4Gray();
+  Paint_SelectImage(buffer);
+  memset(buffer, WHITE, bufferSize);
+  
+  if (downloadBMP(BMP_URL)) {
+    printf("BMP downloaded successfully!\n");
 
-    if (downloadBMP(BMP_URL)) {
-        printf("BMP downloaded successfully!\n");
-        EPD_7IN5_V2_Init_4Gray();
-        Paint_SelectImage(buffer);
-        // Paint_Clear(WHITE);
-        Paint_DrawBitMap(buffer);
-        EPD_7IN5_V2_Display_4Gray(buffer);
-        EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
-    } else {
-        printf("Failed to download BMP image.\n");
-    }
+    // Paint_DrawBitMap(imageBuffer); // Works when image and display are of the same size
+    // Paint_NewImage(imageBuffer, IMAGE_WIDTH, IMAGE_HEIGHT, 0, WHITE);
+    // Paint_SelectImage(imageBuffer);
+
+    // Paint_DrawImage funkar inte med gråskala?
+    Paint_DrawImage(imageBuffer, 
+      // 0,0,
+      (DISPLAY_WIDTH-IMAGE_WIDTH) /2,
+      (DISPLAY_HEIGHT-IMAGE_HEIGHT) /2 + 50,
+      IMAGE_WIDTH, IMAGE_HEIGHT*2); // Height * 2 to adjust for gray scale rendering
+
+    EPD_7IN5_V2_Display_4Gray(buffer);
+    EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
+  } else {
+    printf("Failed to download BMP image.\n");
+  }
 
   DEV_Delay_ms(60000);
   // delay(60000);
@@ -119,12 +148,12 @@ bool downloadBMP(const char* url) {
   int height = *(int*)&header[22];
   uint16_t bitDepth = *(uint16_t*)&header[28];
 
-  Serial.printf("Image downloaded: %dx%d, %d-bit color depth\n", width, abs(height), bitDepth);
+  Serial.printf("Image downloaded: %dx%d, %d-bit color depth\n", width, height, bitDepth);
 
   // Validate image size and color depth
-  if ((bitDepth != 8 && bitDepth != 24) || width != DISPLAY_WIDTH || abs(height) != DISPLAY_HEIGHT) {
+  if ((bitDepth != 8 && bitDepth != 24) || width != IMAGE_WIDTH || height != IMAGE_HEIGHT) {
     Serial.println("Incorrect image size or color depth");
-    Serial.printf("Expected: %dx%d, 8- or 24-bit color depth\n", DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    Serial.printf("Expected: %dx%d, 8- or 24-bit color depth\n", IMAGE_WIDTH, IMAGE_HEIGHT);
     Serial.printf("Data offset: %d\n", dataOffset);
     http.end();
     return false;
@@ -138,7 +167,7 @@ bool downloadBMP(const char* url) {
   if (bitDepth == 8) {
     handle8BitImageData(width, stream);
   } else if (bitDepth == 24) {
-    handle24BitImageData(width, stream);
+    handle24BitImageData(width, height, stream, imageBuffer, imageBufferSize);
   }
 
   http.end();
@@ -169,10 +198,12 @@ void handle8BitImageData(int width, WiFiClient *stream)
 }
 
 
-void handle24BitImageData(int width, WiFiClient *stream)
+void handle24BitImageData(int width, int height, WiFiClient *stream, uint8_t* imageBuffer, size_t imageBufferSize)
 {
   int rowSize = ((width * 3 + 3) / 4) * 4;
   uint8_t row[rowSize];
+
+  memset(imageBuffer, WHITE, imageBufferSize); // Clear image buffer to white
 
   // Simple 4x4 Bayer matrix for ordered dithering
   const uint8_t bayer[4][4] = {
@@ -182,10 +213,10 @@ void handle24BitImageData(int width, WiFiClient *stream)
     { 15,  7, 13,  5 }
   };
 
-  for (int y = DISPLAY_HEIGHT - 1; y >= 0; y--)
+  for (int y = height - 1; y >= 0; y--)
   {
     stream->readBytes(row, rowSize);
-    for (int x = 0; x < DISPLAY_WIDTH; x++)
+    for (int x = 0; x < width; x++)
     {
       // BMP stores in BGR order
       uint8_t b = row[x * 3 + 0];
@@ -206,12 +237,12 @@ void handle24BitImageData(int width, WiFiClient *stream)
       // uint16_t dithered = std::min<int>(255, std::max<int>(0, (gamma_gray + threshold) - 8)); // clamp to 0-255
       // uint8_t level = dithered >> 6; // 0–3
 
-      int index = y * DISPLAY_WIDTH + x;
+      int index = y * width + x; // The width here is the display buffer width, not image width
       int byteIndex = index / 4;
       int shift = (3 - (index % 4)) * 2;
 
-      buffer[byteIndex] &= ~(0x3 << shift);
-      buffer[byteIndex] |= (level << shift);
+      imageBuffer[byteIndex] &= ~(0x3 << shift);
+      imageBuffer[byteIndex] |= (level << shift);
     }
   }
 }
