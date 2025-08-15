@@ -9,7 +9,16 @@
 
 #define DISPLAY_WIDTH EPD_7IN5_V2_WIDTH
 #define DISPLAY_HEIGHT EPD_7IN5_V2_HEIGHT
-#define BMP_URL "http://192.168.10.247:5000/1" // 24 bpp
+
+
+// Array of strings BMP_URL_1 and BMP_URL_2 as items
+const char* bmpUrls[] = {
+   "http://192.168.10.247:5000/1",
+   "http://192.168.10.247:5000/2"
+};
+
+
+int currentUrlIndex = 0;
 
 uint8_t* buffer = nullptr; // Will be allocated dynamically
 size_t bufferSize = 0;
@@ -51,7 +60,13 @@ void setup()
   Paint_SelectImage(buffer);
   Paint_Clear(WHITE);
   Paint_DrawString_EN(70, 50, "Initializing...", &Font16, WHITE, BLACK);
-  Paint_DrawString_EN(70, 70, BMP_URL, &Font12, WHITE, BLACK);
+
+  int yStart = 70;
+  for (const char* url : bmpUrls) {
+    Paint_DrawString_EN(70, yStart, url, &Font12, WHITE, BLACK);
+    yStart += 20;
+  }
+
   EPD_7IN5_V2_Display(buffer); // Offsetfel
   // DEV_Delay_ms(2000);
 
@@ -87,21 +102,24 @@ void EPD_7IN5_V2_Clear_4Gray(void) {
 
 void loop()
 {
-    EPD_7IN5_V2_Init_4Gray();
-    // EPD_7IN5_V2_Clear_4Gray();
-    Paint_SelectImage(buffer);
-    Paint_Clear(BLACK);
+  EPD_7IN5_V2_Init_4Gray();
+  // EPD_7IN5_V2_Clear_4Gray();
+  Paint_SelectImage(buffer);
+  Paint_Clear(BLACK);
 
-    if (downloadBMP(BMP_URL)) {
-        printf("BMP downloaded successfully!\n");
-        // Paint_DrawBitMap(buffer);
-        EPD_7IN5_V2_Display_4Gray(buffer);
-        EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
-    }
-     else {
-        printf("Failed to download BMP image.\n");
-    }
+  // Iterate over
+  const char* url = bmpUrls[currentUrlIndex];
+  currentUrlIndex = (currentUrlIndex + 1) % 2;
 
+  if (downloadBMP(url)) {
+      printf("BMP downloaded successfully!\n");
+      // Paint_DrawBitMap(buffer);
+      EPD_7IN5_V2_Display_4Gray(buffer);
+      EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
+  }
+    else {
+      printf("Failed to download BMP image.\n");
+  }
 
   DEV_Delay_ms(60000);
   // delay(60000);
@@ -202,7 +220,7 @@ void handle24BitImageData(int width, int height, WiFiClient *stream, int xStart,
 
   for (int y = height - 1; y >= 0; y--)
   {
-    if (y % 10 == 0) printf("Processing row %d. Free heap: %d\n", y, ESP.getFreeHeap());
+    // if (y % 10 == 0) printf("Processing row %d. Free heap: %d\n", y, ESP.getFreeHeap());
   
     stream->readBytes(row, rowSize);
 
