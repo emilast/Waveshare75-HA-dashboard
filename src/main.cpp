@@ -17,7 +17,6 @@ const char* bmpUrls[] = {
    "http://192.168.10.247:5000/2"
 };
 
-
 int currentUrlIndex = 0;
 
 uint8_t* buffer = nullptr; // Will be allocated dynamically
@@ -27,11 +26,59 @@ bool downloadBMP(const char *url);
 void handle8BitImageData(int width, WiFiClient *stream);
 void handle24BitImageData(int width, int height, WiFiClient *stream, int x, int y, uint8_t* buffer, size_t bufferSize);
 
+// Set pixel in 2bpp buffer
+// x, y = pixel coordinate
+// color = 0=black, 1=dark gray, 2=light gray, 3=white
+void SetPixel2bpp(uint8_t* buffer, int width, int x, int y, uint8_t color) {
+  int index = (y * width + x);
+  int byteIndex = index / 4;          // 4 pixels per byte
+  int shift = (3 - (index % 4)) * 2;  // which 2-bit field
+  buffer[byteIndex] &= ~(0x3 << shift);       // clear bits
+  buffer[byteIndex] |= ((color & 0x3) << shift); // set color
+}
+
+// Draw a string with any font size from sFONT
+void DrawString2bpp(uint8_t* buffer, int width, int x, int y, 
+      const char* text, uint8_t textColor, uint8_t bgColor, sFONT* font) {
+  int charWidth = font->Width;
+  int charHeight = font->Height;
+  int bytesPerRow = (charWidth + 7) / 8;
+  int bytesPerChar = bytesPerRow * charHeight;
+
+  // log bytes info, including width and height, bytesPerRow
+  Serial.printf("Character: %c, Bytes per char: %d, Width: %d, Height: %d, Bytes per row: %d\n", *text, bytesPerChar, charWidth, charHeight, bytesPerRow);
+
+  while (*text) {
+  char c = *text;
+  if (c < 32 || c > 126) {
+    c = '?'; // fallback
+  }
+  int charIndex = (c - 32) * bytesPerChar;
+
+  for (int row = 0; row < charHeight; row++) {
+    for (int col = 0; col < charWidth; col++) {
+    int byteInRow = col / 8;
+    int bitInByte = 7 - (col % 8);
+    uint8_t lineByte = font->table[charIndex + row * bytesPerRow + byteInRow];
+
+    if (lineByte & (1 << bitInByte)) {
+      SetPixel2bpp(buffer, width, x + col, y + row, textColor);
+    } else {
+      SetPixel2bpp(buffer, width, x + col, y + row, bgColor);
+    }
+    }
+  }
+  x += charWidth; // next character
+  text++;
+  }
+}
 
 /* Entry point ----------------------------------------------------------------*/
 void setup()
 {
-    // WiFi-anslutning via WifiManager
+  DEV_Module_Init();
+
+  // WiFi-anslutning via WifiManager
   WiFiManager wm;
   bool res = wm.autoConnect("ESP32-Setup");
   if (!res) {
@@ -39,6 +86,23 @@ void setup()
     ESP.restart();
   }
   Serial.println("Connected to WiFi");
+
+
+  // Get current time from time server
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  struct tm timeinfo;
+  
+  // Set timezone to CEST (Central European Summer Time)
+  setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+  tzset();
+  
+  if (!getLocalTime(&timeinfo, 10000)) {
+    Serial.println("Failed to obtain time");
+  }
+
+  Serial.printf("Current date and time: %04d-%02d-%02dT%02d:%02d:%02d\n",
+                timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
 
   // Allocate image buffer dynamically
   bufferSize = DISPLAY_WIDTH * DISPLAY_HEIGHT / 4;
@@ -50,8 +114,6 @@ void setup()
   memset(buffer, 0xFF, bufferSize);
   Paint_NewImage(buffer, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, WHITE);
   Serial.printf("Allocated %d bytes for display buffer\n", bufferSize);
-
-  DEV_Module_Init();
 
   // Startup message
   // EPD_7IN5_V2_Init();
@@ -68,44 +130,13 @@ void setup()
   }
 
   EPD_7IN5_V2_Display(buffer); // Offsetfel
-  // DEV_Delay_ms(2000);
-
-  // // Offsetfel
-  // EPD_7IN5_V2_Init_4Gray();
-  // printf("4 gray display 1\r\n");
-  // Paint_SelectImage(buffer);
-  // Paint_Clear(WHITE);
-  // Paint_DrawString_EN(400, 50, "waveshare 2", &Font16, BLACK, WHITE);
-  // Paint_DrawString_EN(400, 400, "hello world 2", &Font12, WHITE, BLACK);
-  // EPD_7IN5_V2_WritePicture_4Gray(buffer); // Känns komprimerat, fel format, grått i kanten på text
-  // // EPD_7IN5_V2_Display_4Gray(buffer); // Offsetfel
-  // DEV_Delay_ms(2000);
-
   EPD_7IN5_V2_Sleep();
 }
-
-void EPD_7IN5_V2_Clear_4Gray(void) {
-    // size = width * height / 4 because 4 pixels per byte in 4-gray mode
-    uint32_t size = EPD_7IN5_V2_WIDTH * EPD_7IN5_V2_HEIGHT / 4;
-    uint8_t white = 0xFF; // 0b11111111 means all pixels = white (2 bits each)
-
-    uint8_t *clearBuffer = (uint8_t *)malloc(size);
-    if (clearBuffer == NULL) return;
-
-    memset(clearBuffer, white, size);
-
-    EPD_7IN5_V2_Display_4Gray(clearBuffer);
-
-    free(clearBuffer);
-}
-
 
 void loop()
 {
   EPD_7IN5_V2_Init_4Gray();
-  // EPD_7IN5_V2_Clear_4Gray();
   Paint_SelectImage(buffer);
-  Paint_Clear(BLACK);
 
   // Iterate over
   const char* url = bmpUrls[currentUrlIndex];
@@ -113,7 +144,14 @@ void loop()
 
   if (downloadBMP(url)) {
       printf("BMP downloaded successfully!\n");
-      // Paint_DrawBitMap(buffer);
+      // Get current time
+      time_t now = time(nullptr);
+      struct tm* timeinfo = localtime(&now);
+      char timeStr[16];
+      strftime(timeStr, sizeof(timeStr), "%H:%M:%S", timeinfo);
+
+      DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 440, timeStr, BLACK, WHITE, &Font24);
+
       EPD_7IN5_V2_Display_4Gray(buffer);
       EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
   }
@@ -232,7 +270,18 @@ void handle24BitImageData(int width, int height, WiFiClient *stream, int xStart,
       uint8_t r = row[x * 3 + 2];
       // Convert to grayscale (simple average)
       uint8_t gray = (uint16_t(r) + uint16_t(g) + uint16_t(b)) / 3;
-      uint8_t level = level = gray >> 6; // 0–3
+      // Map grayscale to 2-bit level with adjustable thresholds
+      uint8_t level;
+      if (gray < 64) {
+        level = 0; // darkest
+      } else if (gray < 128) {
+        level = 1;
+      // } else if (gray < 192) {
+      } else if (gray < 240) {
+        level = 2;
+      } else {
+        level = 3; // lightest
+      }
 
       int index = (yStart + y) * DISPLAY_WIDTH + (xStart + x);
       int byteIndex = index / 4;
