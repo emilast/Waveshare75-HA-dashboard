@@ -10,6 +10,11 @@
 #define DISPLAY_WIDTH EPD_7IN5_V2_WIDTH
 #define DISPLAY_HEIGHT EPD_7IN5_V2_HEIGHT
 
+#define SOLID               0x1
+#define TRANSPARENT         0x2 // Transparent background, no pixels drawn
+#define TRANSPARENT2        0x3 // Semi-transparent, half of the pixels drawn
+#define TRANSPARENT3        0x4 // More transparent
+#define TRANSPARENT4        0x5 // Even more transparent, one fourth of the pixels drawn
 
 // Array of strings BMP_URL_1 and BMP_URL_2 as items
 const char* bmpUrls[] = {
@@ -39,7 +44,8 @@ void SetPixel2bpp(uint8_t* buffer, int width, int x, int y, uint8_t color) {
 
 // Draw a string with any font size from sFONT
 void DrawString2bpp(uint8_t* buffer, int width, int x, int y, 
-      const char* text, uint8_t textColor, uint8_t bgColor, sFONT* font) {
+      const char* text, uint8_t textColor, uint8_t bgColor, uint8_t transparentBg,
+      sFONT* font) {
   int charWidth = font->Width;
   int charHeight = font->Height;
   int bytesPerRow = (charWidth + 7) / 8;
@@ -57,15 +63,23 @@ void DrawString2bpp(uint8_t* buffer, int width, int x, int y,
 
   for (int row = 0; row < charHeight; row++) {
     for (int col = 0; col < charWidth; col++) {
-    int byteInRow = col / 8;
-    int bitInByte = 7 - (col % 8);
-    uint8_t lineByte = font->table[charIndex + row * bytesPerRow + byteInRow];
+      int byteInRow = col / 8;
+      int bitInByte = 7 - (col % 8);
+      uint8_t lineByte = font->table[charIndex + row * bytesPerRow + byteInRow];
 
-    if (lineByte & (1 << bitInByte)) {
-      SetPixel2bpp(buffer, width, x + col, y + row, textColor);
-    } else {
-      SetPixel2bpp(buffer, width, x + col, y + row, bgColor);
-    }
+      bool useBgPixel =
+        (transparentBg == SOLID) || // Solid background, all pixels drawn
+        (transparentBg == TRANSPARENT2 && ((y + row + x + col) % 2 == 0)) ||
+        (transparentBg == TRANSPARENT3 && ((y + row + x + col) % 5 == 0)) ||
+        (transparentBg == TRANSPARENT4 && ((y + row + x + col) % 9 == 0));
+
+      if (lineByte & (1 << bitInByte)) {
+        SetPixel2bpp(buffer, width, x + col, y + row, textColor);
+      } else {
+        if (useBgPixel) {
+          SetPixel2bpp(buffer, width, x + col, y + row, bgColor);
+        }
+      }
     }
   }
   x += charWidth; // next character
@@ -148,9 +162,10 @@ void loop()
       time_t now = time(nullptr);
       struct tm* timeinfo = localtime(&now);
       char timeStr[16];
-      strftime(timeStr, sizeof(timeStr), "%H:%M:%S", timeinfo);
+      strftime(timeStr, sizeof(timeStr), "%H:%M", timeinfo);
 
-      DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 440, timeStr, BLACK, WHITE, &Font24);
+      // DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 440, timeStr, BLACK, GRAY3, TRANSPARENT, &Font24);
+      DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 440, timeStr, BLACK, WHITE, SOLID, &Font24);
 
       EPD_7IN5_V2_Display_4Gray(buffer);
       EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
@@ -277,7 +292,7 @@ void handle24BitImageData(int width, int height, WiFiClient *stream, int xStart,
       } else if (gray < 128) {
         level = 1;
       // } else if (gray < 192) {
-      } else if (gray < 240) {
+      } else if (gray < 212) {
         level = 2;
       } else {
         level = 3; // lightest
