@@ -18,9 +18,13 @@
 
 // Array of strings BMP_URL_1 and BMP_URL_2 as items
 const char* bmpUrls[] = {
-   "http://192.168.10.247:5000/1",
-   "http://192.168.10.247:5000/2"
+   "http://homeassistant.local:5000/4",
+   "http://homeassistant.local:5000/1",
+   "http://homeassistant.local:5000/3",
+   "http://homeassistant.local:5000/2"
 };
+static const int NUM_URLS = sizeof(bmpUrls) / sizeof(bmpUrls[0]);
+
 
 int currentUrlIndex = 0;
 
@@ -154,7 +158,7 @@ void loop()
 
   // Iterate over
   const char* url = bmpUrls[currentUrlIndex];
-  currentUrlIndex = (currentUrlIndex + 1) % 2;
+  currentUrlIndex = (currentUrlIndex + 1) % NUM_URLS;
 
   if (downloadBMP(url)) {
       printf("BMP downloaded successfully!\n");
@@ -165,7 +169,7 @@ void loop()
       strftime(timeStr, sizeof(timeStr), "%H:%M", timeinfo);
 
       // DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 440, timeStr, BLACK, GRAY3, TRANSPARENT, &Font24);
-      DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 440, timeStr, BLACK, WHITE, SOLID, &Font24);
+      DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 440, timeStr, BLACK, WHITE, TRANSPARENT2, &Font24);
 
       EPD_7IN5_V2_Display_4Gray(buffer);
       EPD_7IN5_V2_Sleep(); // Turn off screen power until next call to EPD_7IN5_V2_Init*().
