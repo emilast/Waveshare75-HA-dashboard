@@ -16,6 +16,8 @@
 #define TRANSPARENT3        0x4 // More transparent
 #define TRANSPARENT4        0x5 // Even more transparent, one fourth of the pixels drawn
 
+const char* NETWORK_NAME = "Waveshare75-HA-dashboard";
+
 // Array of strings BMP_URL_1 and BMP_URL_2 as items
 const char* bmpUrls[] = {
    "http://homeassistant.local:5000/4",
@@ -96,11 +98,34 @@ void setup()
 {
   DEV_Module_Init();
 
-  // WiFi-anslutning via WifiManager
+  // Startup message
+  EPD_7IN5_V2_Init_Fast(); // Fast => Less flicker when displaying the screen
+  Paint_SelectImage(buffer);
+  Paint_Clear(WHITE);
+
+  // Allocate image buffer dynamically
+  bufferSize = DISPLAY_WIDTH * DISPLAY_HEIGHT / 4;
+  buffer = (uint8_t*)malloc(bufferSize);
+  if (buffer == nullptr) {
+    Serial.println("Failed to allocate buffer memory!");
+    ESP.restart();
+  }
+  memset(buffer, 0xFF, bufferSize);
+  Paint_NewImage(buffer, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, WHITE);
+  Serial.printf("Allocated %d bytes for display buffer\n", bufferSize);
+
+  // WiFi connection via WifiManager
+  Paint_DrawString_EN(70, 50, "Connecting to Wifi network...", &Font16, WHITE, BLACK);
+  Paint_DrawString_EN(70, 90, "In case of failure, connect to the following WiFI:", &Font16, WHITE, BLACK);
+  Paint_DrawString_EN(90, 130, NETWORK_NAME, &Font16, WHITE, BLACK);
+  Paint_DrawString_EN(70, 170, "to configure network settings.", &Font16, WHITE, BLACK);
+
+  EPD_7IN5_V2_Display(buffer); // Offsetfel
+
   WiFiManager wm;
-  bool res = wm.autoConnect("ESP32-Setup");
+  bool res = wm.autoConnect(NETWORK_NAME);
   if (!res) {
-    Serial.println("WiFi connection failed.");
+    Serial.println("Failed to connect to WiFi");
     ESP.restart();
   }
   Serial.println("Connected to WiFi");
@@ -122,19 +147,6 @@ void setup()
                 timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
 
-  // Allocate image buffer dynamically
-  bufferSize = DISPLAY_WIDTH * DISPLAY_HEIGHT / 4;
-  buffer = (uint8_t*)malloc(bufferSize);
-  if (buffer == nullptr) {
-    Serial.println("Failed to allocate buffer memory!");
-    ESP.restart();
-  }
-  memset(buffer, 0xFF, bufferSize);
-  Paint_NewImage(buffer, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, WHITE);
-  Serial.printf("Allocated %d bytes for display buffer\n", bufferSize);
-
-  // Startup message
-  // EPD_7IN5_V2_Init();
   EPD_7IN5_V2_Init_Fast(); // Fast => Less flicker when displaying the screen
   printf("Startup screen...\r\n");
   Paint_SelectImage(buffer);
