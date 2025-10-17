@@ -58,7 +58,7 @@ void DrawString2bpp(uint8_t* buffer, int width, int x, int y,
   int bytesPerChar = bytesPerRow * charHeight;
 
   // log bytes info, including width and height, bytesPerRow
-  Serial.printf("Character: %c, Bytes per char: %d, Width: %d, Height: %d, Bytes per row: %d\n", *text, bytesPerChar, charWidth, charHeight, bytesPerRow);
+  // Serial.printf("Character: %c, Bytes per char: %d, Width: %d, Height: %d, Bytes per row: %d\n", *text, bytesPerChar, charWidth, charHeight, bytesPerRow);
 
   while (*text) {
   char c = *text;
@@ -116,9 +116,9 @@ void setup()
 
   // WiFi connection via WifiManager
   Paint_DrawString_EN(70, 50, "Connecting to Wifi network...", &Font16, WHITE, BLACK);
-  Paint_DrawString_EN(70, 90, "In case of failure, connect to the following WiFI:", &Font16, WHITE, BLACK);
+  Paint_DrawString_EN(70, 90, "In case of failure, connect to the following WiFI:", &Font12, WHITE, BLACK);
   Paint_DrawString_EN(90, 130, NETWORK_NAME, &Font16, WHITE, BLACK);
-  Paint_DrawString_EN(70, 170, "to configure network settings.", &Font16, WHITE, BLACK);
+  Paint_DrawString_EN(70, 170, "to configure network settings.", &Font12, WHITE, BLACK);
 
   EPD_7IN5_V2_Display(buffer); // Offsetfel
 
@@ -166,6 +166,9 @@ void setup()
 void loop()
 {
   EPD_7IN5_V2_Init_4Gray();
+
+  memset(buffer, 0xFF, bufferSize);
+
   Paint_SelectImage(buffer);
 
   // Iterate over
@@ -205,6 +208,28 @@ bool downloadBMP(const char* url) {
 
   if (httpCode != HTTP_CODE_OK) {
     Serial.printf("HTTP error: %d\n", httpCode);
+
+    // Get error message from server/network if available
+    String errorMsg = http.getString();
+    if (errorMsg.length() == 0) {
+      errorMsg = "(No error message)";
+    }
+
+    // Show error message on screen
+    char codeStr[64];
+    snprintf(codeStr, sizeof(codeStr), "HTTP error, status code: %d", httpCode);
+    DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 50, codeStr, BLACK, WHITE, TRANSPARENT2, &Font16);
+
+    DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 70, url, BLACK, WHITE, TRANSPARENT2, &Font12);
+
+    // Truncate errorMsg if too long for display
+    char errBuf[128];
+    strncpy(errBuf, errorMsg.c_str(), sizeof(errBuf) - 1);
+    errBuf[sizeof(errBuf) - 1] = '\0';
+    DrawString2bpp(buffer, DISPLAY_WIDTH, 70, 90, errBuf, BLACK, WHITE, TRANSPARENT2, &Font12);
+
+    EPD_7IN5_V2_Display_4Gray(buffer);
+
     http.end();
     return false;
   }
