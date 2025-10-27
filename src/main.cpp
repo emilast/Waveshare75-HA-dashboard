@@ -20,10 +20,10 @@ const char* NETWORK_NAME = "Waveshare75-HA-dashboard";
 
 // Array of strings BMP_URL_1 and BMP_URL_2 as items
 const char* bmpUrls[] = {
-   "http://homeassistant.local:5000/4",
-   "http://homeassistant.local:5000/1",
-   "http://homeassistant.local:5000/3",
-   "http://homeassistant.local:5000/2"
+   "http://homeassistant:5000/4",
+   "http://homeassistant:5000/1",
+   "http://homeassistant:5000/3",
+   "http://homeassistant:5000/2"
 };
 static const int NUM_URLS = sizeof(bmpUrls) / sizeof(bmpUrls[0]);
 
