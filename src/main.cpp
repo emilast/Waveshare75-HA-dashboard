@@ -20,6 +20,7 @@ const char* NETWORK_NAME = "Waveshare75-HA-dashboard";
 
 // Array of strings BMP_URL_1 and BMP_URL_2 as items
 const char* bmpUrls[] = {
+  "https://qrwmbaypgxaexdohocwh.supabase.co/functions/v1/xkcd-bmp",
    "http://homeassistant:5000/4",
    "http://homeassistant:5000/1",
    "http://homeassistant:5000/3",
@@ -203,6 +204,7 @@ bool downloadBMP(const char* url) {
   Serial.printf("Downloading BMP from: %s\n", url);
 
   HTTPClient http;
+  http.useHTTP10(true); // Disable chunked transfer encoding for compatibility
   http.begin(url);
   int httpCode = http.GET();
 
@@ -291,15 +293,17 @@ void handle8BitImageData(int width, WiFiClient *stream)
     stream->readBytes(row, rowSize);
     for (int x = 0; x < DISPLAY_WIDTH; x++)
     {
-      uint8_t pixel = row[x];     // 0–255
-      uint8_t level = pixel >> 6; // 0–3
+      if (x < width) { // Bounds check
+        uint8_t pixel = row[x];     // 0–255
+        uint8_t level = pixel >> 6; // 0–3
 
-      int index = y * DISPLAY_WIDTH + x;
-      int byteIndex = index / 4;
-      int shift = (3 - (index % 4)) * 2;
+        int index = y * DISPLAY_WIDTH + x;
+        int byteIndex = index / 4;
+        int shift = (3 - (index % 4)) * 2;
 
-      buffer[byteIndex] &= ~(0x3 << shift);
-      buffer[byteIndex] |= (level << shift);
+        buffer[byteIndex] &= ~(0x3 << shift);
+        buffer[byteIndex] |= (level << shift);
+      }
     }
   }
 }
@@ -339,12 +343,18 @@ void handle24BitImageData(int width, int height, WiFiClient *stream, int xStart,
         level = 3; // lightest
       }
 
-      int index = (yStart + y) * DISPLAY_WIDTH + (xStart + x);
-      int byteIndex = index / 4;
-      int shift = (3 - (index % 4)) * 2;
+      int pixelX = xStart + x;
+      int pixelY = yStart + y;
+      
+      // Bounds check: only write if pixel is within display area
+      if (pixelX >= 0 && pixelX < DISPLAY_WIDTH && pixelY >= 0 && pixelY < DISPLAY_HEIGHT) {
+        int index = pixelY * DISPLAY_WIDTH + pixelX;
+        int byteIndex = index / 4;
+        int shift = (3 - (index % 4)) * 2;
 
-      buffer[byteIndex] &= ~(0x3 << shift);
-      buffer[byteIndex] |= (level << shift);
+        buffer[byteIndex] &= ~(0x3 << shift);
+        buffer[byteIndex] |= (level << shift);
+      }
     }
   }
 }
